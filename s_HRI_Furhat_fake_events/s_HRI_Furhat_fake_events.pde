@@ -28,20 +28,33 @@ void setup()
 }
 
 void draw() {
-
-  fakeFurharStates();
+  
+  int valueSentToArduino = generateSinValueBasedOnTime();
+  fakeFurharStates(valueSentToArduino);
   render();
+  
+  println(valueSentToArduino);
   
 }
 
-void fakeFurharStates(){
+int generateSinValueBasedOnTime()
+{
+  float   sinValue            = sin(millis() * 0.01);
+  float   normalizedValue     = (sinValue + (float)1.0) / (float)2.0;
+  float   reMappedToPwnRange  = normalizedValue * 255;// 0 - 255
+  int     reMappedSinValue   = (int)reMappedToPwnRange;
+  
+  return reMappedSinValue;
+}
+
+void fakeFurharStates(int reMappedAudioValue){
   
   if (mouseOverRect() == true) {
     rgb[0] = 10;
     rgb[1] = 200;
     rgb[2] = 10;
     display_message = "Furhat Talking";
-    serial_port.write('1');
+    serial_port.write(reMappedAudioValue);
   } 
   else {
     rgb[0] = 0;
