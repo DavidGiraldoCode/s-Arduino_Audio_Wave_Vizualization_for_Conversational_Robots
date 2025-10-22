@@ -1,7 +1,7 @@
 /**
  * Oct 17 / 2025 
  * Faking the state of a Furhat robot, to tell an Arduino over the
- * serial port when the robot is listening '0' or talking '1'
+ * serial port when the robot is listening 'A' or talking [0,255]
  */
 
 import processing.serial.*;
@@ -18,6 +18,7 @@ void setup()
   rgb[1] = 0;
   rgb[2] = 0;
   
+  println("PRINTING AVAILABLE PORTS");
   for(int i = 0; i < Serial.list().length; i++)
   {
     // Prints the list of ports. Check the other IDE what port is the Arduino using.
@@ -33,20 +34,29 @@ void draw() {
   fakeFurharStates(valueSentToArduino);
   render();
   
-  println(valueSentToArduino);
+  //println(valueSentToArduino);
   
 }
 
+/*
+*  Returns a value from [0,255], by remapping a Sin wave over the
+*  time since the program started in milliseconds
+*/
 int generateSinValueBasedOnTime()
 {
-  float   sinValue            = sin(millis() * 0.01);
+  float   sinValue            = sin(millis() * 0.005);
   float   normalizedValue     = (sinValue + (float)1.0) / (float)2.0;
-  float   reMappedToPwnRange  = normalizedValue * 255;// 0 - 255
+  float   reMappedToPwnRange  = normalizedValue * 255;
   int     reMappedSinValue   = (int)reMappedToPwnRange;
   
   return reMappedSinValue;
 }
 
+/*
+* Changes the Fruat state base on a mouse location condition,
+* and sends 'A' for listening and the fake sound wave for 
+* when it is talking
+*/
 void fakeFurharStates(int reMappedAudioValue){
   
   if (mouseOverRect() == true) {
@@ -61,7 +71,7 @@ void fakeFurharStates(int reMappedAudioValue){
     rgb[1] = 0;
     rgb[2] = 0;                
     display_message = "Furhat Listening";
-    serial_port.write('0');
+    serial_port.write('A');
   }
 }
 
