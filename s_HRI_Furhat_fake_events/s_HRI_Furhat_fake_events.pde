@@ -5,14 +5,22 @@
  */
 
 import processing.serial.*;
+import processing.sound.*;
 
-Serial serial_port;  // Create object from Serial class
-String display_message = "";
-int[] rgb = new int[3];
+SoundFile   soundfile;
+Serial      serial_port;  // Create object from Serial class
+String      display_message   = "";
+int[]       rgb               = new int[3];
+char        furhatState       = 's';
+final char  TALKING           = 't';
+final char  LISTENING         = 's';
 
 void setup() 
 {
   size(200, 200);
+  
+  initAudioFile();
+  
   String portName = Serial.list()[3];
   rgb[0] = 0;
   rgb[1] = 0;
@@ -47,7 +55,7 @@ int generateSinValueBasedOnTime()
   float   sinValue            = sin(millis() * 0.005);
   float   normalizedValue     = (sinValue + (float)1.0) / (float)2.0;
   float   reMappedToPwnRange  = normalizedValue * 255;
-  int     reMappedSinValue   = (int)reMappedToPwnRange;
+  int     reMappedSinValue    = (int)reMappedToPwnRange;
   
   return reMappedSinValue;
 }
@@ -60,13 +68,17 @@ int generateSinValueBasedOnTime()
 void fakeFurharStates(int reMappedAudioValue){
   
   if (mouseOverRect() == true) {
+    controlAudioFileBaseOnFurhatState(TALKING);
     rgb[0] = 10;
     rgb[1] = 200;
     rgb[2] = 10;
     display_message = "Furhat Talking";
-    serial_port.write(reMappedAudioValue);
+    int val = int(200 * getAudioSample(true));
+    serial_port.write(val);
+    //serial_port.write(reMappedAudioValue);
   } 
   else {
+    controlAudioFileBaseOnFurhatState(LISTENING);
     rgb[0] = 0;
     rgb[1] = 0;
     rgb[2] = 0;                
@@ -75,12 +87,78 @@ void fakeFurharStates(int reMappedAudioValue){
   }
 }
 
+///////////////////////////////////////////////////////////////
+//////////////// AUDIO RELATED ///////////////////////////
+///////////////////////////////////////////////////////////////
+void initAudioFile()
+{
+    // load a stereo soundfile with out of phase sine waves in the left and right channel
+    soundfile = new SoundFile(this, "npc-arnold-greetings.wav");
+  
+    println("This sound file of duration " + soundfile.duration() + " seconds" +
+      " contains " + soundfile.frames() + " frames, but because it has " + 
+      soundfile.channels() + " channels there are actually " + 
+      soundfile.channels() * soundfile.frames() +
+      " samples that can be accessed using the read() and write() functions");
+}
+
+float getAudioSample(boolean isNormalized)
+{
+  int     frameIndex   = soundfile.positionFrame();
+  float   audioSample  = (float) soundfile.read(frameIndex, 0);
+  
+  if(isNormalized)
+  {
+    audioSample = (audioSample + 1.0) / 2.0;
+    audioSample = audioSample > 1.0 ? 1.0 : audioSample;
+  }
+  
+  return   audioSample;
+}
+
+void renderVisualFeedbackOfAudioFile()
+{
+  float val = 100 + (100 * getAudioSample(true));
+  
+  println(getAudioSample(true));
+  noFill();
+  noStroke();
+  fill(255,0,0);
+  ellipse(width/2, height/2, val, val);
+}
+
+void controlAudioFileBaseOnFurhatState(char furhatState)
+{
+  switch(furhatState)
+  {
+    case 't': // Talking
+      if(!soundfile.isPlaying())
+        soundfile.play();
+    break;
+    case 'p': // pause
+      if(soundfile.isPlaying())
+        soundfile.pause();
+    break;
+    case 's': // stop
+      if(soundfile.isPlaying())
+      {
+        soundfile.pause();
+        soundfile.jump(0.0);
+        soundfile.pause();
+      }
+    break;
+  }
+}
+///////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////
+
 void render(){
   
   background(255);
   fill(rgb[0], rgb[1], rgb[2]);   
   text(display_message, 10, 20);
   rect(50, 50, 100, 100);
+  renderVisualFeedbackOfAudioFile();
   
 }
 
@@ -88,4 +166,9 @@ boolean mouseOverRect() {
   
   return ((mouseX >= 50) && (mouseX <= 150) && (mouseY >= 50) && (mouseY <= 150));
 
+}
+
+void keyPressed()
+{
+  controlAudioFileBaseOnFurhatState(key);
 }
