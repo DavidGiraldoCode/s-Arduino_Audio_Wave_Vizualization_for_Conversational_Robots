@@ -124,6 +124,11 @@ float expo_delta = 0;
 float expo_delta_norm = 0;
 float previous_delt = 0;
 float log_n = 0;
+
+float current_pos = 0;
+float interpolated_pos = 0;
+float target_pos = 0;
+float timer = 0;
 // Only one channel is consider in this code.
 // The normalization is using magic number, fine tunning.
 
@@ -166,6 +171,14 @@ void renderVisualFeedbackOfAudioFile(float delta)
   expo_delta = 1 - exp(-10 * delta);
   expo_delta_norm = 1 - exp(-10 * delta_norm);
   
+  timer++;
+  if(timer % 5 == 0)
+  {
+    current_pos = target_pos; // Fix
+    target_pos = expo_delta_norm;
+    timer = 0;
+  }
+  
   fill(255,0,0);
   int left_margin = 40;
   fill(0);
@@ -198,14 +211,18 @@ void renderVisualFeedbackOfAudioFile(float delta)
   
   fill(255,0,0);
   //(1 - t) f(0) + t  f(1)
-  float t = 0.5;
+  float t = timer/5;
   float interpolated_delta = 0.0;
   interpolated_delta = (1-t)*interpolated_delta + t*expo_delta_norm;
   float base = 50.0;
   float growth = 50.0;
+  
+  interpolated_pos = (1-t)*current_pos + t*target_pos;
+  
   float original_growth = base + (growth * delta_norm);
   float expo_growth = base + (growth * expo_delta_norm);
-  ellipse((width/3), (3*height/4), original_growth, original_growth);
+  float interpolated_growth = base + (growth * interpolated_pos);
+  ellipse((width/3), (3*height/4), interpolated_growth, interpolated_growth);
   ellipse((2*width/3), (3*height/4), expo_growth, expo_growth);
 
   previous_delt = expo_delta_norm;
