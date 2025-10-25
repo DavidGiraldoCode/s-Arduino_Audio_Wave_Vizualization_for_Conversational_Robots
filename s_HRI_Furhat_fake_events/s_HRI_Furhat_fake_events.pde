@@ -17,7 +17,7 @@ final char  LISTENING         = 's';
 
 void setup() 
 {
-  size(500, 500);
+  size(500, 500, P2D);
   
   initAudioFile();
   
@@ -118,6 +118,31 @@ float getAudioSample(boolean isNormalized)
   return   audioSample;
 }
 
+/////////// For ease function, check this
+//https://www.desmos.com/calculator/fpyhzofr6u
+float easedValue(float originalValue)
+{
+  float x = originalValue;
+  float A = 7.7;
+  float C = 0.9;
+  float s = 0.12;
+  
+  float y = (A*(x*x*x)) + (C*x);
+  y *= s;
+  
+  return y>1.0 ? 1.0 : y;
+}
+
+float easedExpValue(float originalValue)
+{
+  float x = originalValue;
+  float B = 3.0;
+  
+  float y = 1.0 - (exp(-B*x));
+  
+  return y>1.0 ? 1.0 : y;
+}
+
 float xOffset = 0;
 float inverse_cdf_delta = 0;
 float expo_delta = 0;
@@ -127,6 +152,8 @@ float log_n = 0;
 
 float current_pos = 0;
 float interpolated_pos = 0;
+float interpolated_eased_pos = 0;
+float interpolated_eased_exp_pos = 0;
 float target_pos = 0;
 float timer = 0;
 // Only one channel is consider in this code.
@@ -144,8 +171,9 @@ void renderVisualFeedbackOfAudioFile(float delta)
   
   noFill();
   
-  
-  
+  /////////////////////////////////////////////////////////
+  /////// For re-mapping of signed signals, refer to this:
+  //https://www.desmos.com/calculator/n94j06y7fb
   delta = delta * delta;
   delta = sqrt(delta);
   
@@ -172,7 +200,8 @@ void renderVisualFeedbackOfAudioFile(float delta)
   expo_delta_norm = 1 - exp(-10 * delta_norm);
   
   timer++;
-  if(timer % 5 == 0)
+  float limit = 8;
+  if(timer % limit == 0)
   {
     current_pos = target_pos; // Fix
     target_pos = expo_delta_norm;
@@ -194,36 +223,55 @@ void renderVisualFeedbackOfAudioFile(float delta)
   line(0, (height/2) , width, (height/2));
   noStroke();
   
-  fill(0,255,0);
+  //fill(0,255,0);
   //ellipse(left_margin + xOffset, (height/2) - (delta * 200), 2, 2);
   
-  fill(255,255,0);
-  ellipse(left_margin + xOffset, (height/2) - (delta_norm * 200), 2, 2);
+  fill(0);
+  ellipse(left_margin + xOffset, (height/2) - (delta_norm * 200), 4, 4);
   
-  fill(0,0,255);
-  //ellipse(left_margin + xOffset+4, (height/2) - (expo_delta * 200), 2, 2);
+  fill(255,0,0);
+  ellipse(left_margin + xOffset+8, (height/2) - (expo_delta_norm * 200), 4, 4);
   
-  fill(0,255,255);
-  ellipse(left_margin + xOffset+4, (height/2) - (expo_delta_norm * 200), 2, 2);
+  
   
   fill(0);
   rect(0,height/2,width,height);
   
   fill(255,0,0);
   //(1 - t) f(0) + t  f(1)
-  float t = timer/5;
+  
   float interpolated_delta = 0.0;
-  interpolated_delta = (1-t)*interpolated_delta + t*expo_delta_norm;
+  //interpolated_delta = (1-t)*interpolated_delta + t*expo_delta_norm;
   float base = 50.0;
   float growth = 50.0;
   
-  interpolated_pos = (1-t)*current_pos + t*target_pos;
+  
+  float t = timer/limit;
+  float eased_t = easedValue(t);
+  float eased_exp_t = easedExpValue(t);
+  
+  interpolated_pos = (1.0-t)*current_pos + t*target_pos;
+  
+  interpolated_eased_pos = (1.0-eased_t)*current_pos + eased_t*target_pos; 
+  
+  interpolated_eased_exp_pos = (1.0-eased_exp_t)*current_pos + eased_exp_t*target_pos; 
+  
+  //fill(0,0,255);
+  //ellipse(left_margin + xOffset+4, (height/2) - (interpolated_pos * 200), 4, 4);
   
   float original_growth = base + (growth * delta_norm);
   float expo_growth = base + (growth * expo_delta_norm);
   float interpolated_growth = base + (growth * interpolated_pos);
-  ellipse((width/3), (3*height/4), interpolated_growth, interpolated_growth);
-  ellipse((2*width/3), (3*height/4), expo_growth, expo_growth);
+  float interpolated_eased_growth = base + (growth * interpolated_eased_exp_pos);
+  
+  
+  fill(255,0,0, 55 + (expo_delta_norm * 200));
+  ellipse((width/3), (3*height/4), 100, 100);
+  
+  fill(255,0,0, 55 + (interpolated_eased_exp_pos * 200));
+  ellipse((2*width/3), (3*height/4), 100, 100);
+  //ellipse((width/3), (3*height/4), interpolated_growth, interpolated_growth);
+  //ellipse((2*width/3), (3*height/4), interpolated_eased_growth, interpolated_eased_growth);
 
   previous_delt = expo_delta_norm;
 }
