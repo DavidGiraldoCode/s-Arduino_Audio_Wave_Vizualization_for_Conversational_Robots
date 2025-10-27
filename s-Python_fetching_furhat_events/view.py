@@ -50,7 +50,8 @@ class View(QMainWindow):
         # ComboBox Input
         self.combo_box = QComboBox()
         self.combo_box.setFixedHeight(40)
-        self.combo_box.addItems(self.model.get_dropdown_options())
+        self.combo_box.addItems([])
+        #self.combo_box.addItems(self.model.get_dropdown_options())
         
         # Mutable Text based on ComboBox
         self.combo_result_label = QLabel("ComboBox Selection: None")
