@@ -1,9 +1,15 @@
 import sys
+
+import numpy as np
 # Import Model and View classes from their respective files
 from model import AppModel 
-from view import View
+from view import AudioIntensityCanvas, View
+from PySide6.QtCore import QTimer, QSize, Qt, QUrl, QModelIndex
 from PySide6.QtWidgets import QApplication
 
+# --- GLOBAL CONSTANTS ---
+PLOT_UPDATE_INTERVAL = 50 # 50ms = 20 FPS
+ASSET_AUDIO_URL = "audio_test.wav" 
 
 class AppController:
     """
@@ -14,12 +20,37 @@ class AppController:
         # 1. Initialize Model and View
         self.model = AppModel()
         self.view = View(self.model)
+
+        #----------------------------------------------- Audio debugging
+        # 2. Instantiate and attach the Matplotlib Canvas
+        self.view.intensity_plot = AudioIntensityCanvas()
+        # Insert the canvas at the top of the layout (index 0)
+        self.view.layout.insertWidget(0, self.view.intensity_plot) 
+
+        # 3. Load Audio Data and Set Frame Pointers (CORRECTED DATA ASSIGNMENT)
+        self.sample_rate, self.full_audio_samples = self.model.load_audio_samples(ASSET_AUDIO_URL)
+        
+        if self.full_audio_samples.size > 0:
+            # Calculate frame size based on update interval
+            self.samples_per_frame = int(self.sample_rate * (PLOT_UPDATE_INTERVAL / 1000.0))
+        else:
+            self.samples_per_frame = 1 # Safe fallback if no data loaded
+
+        self.current_sample_index = 0
+        # 4. Initialize QTimer
+        self.plot_timer = QTimer()
+        self.plot_timer.setInterval(PLOT_UPDATE_INTERVAL)
+        # The CONNECTION: Established in __init__
+        self.plot_timer.timeout.connect(self.update_live_bar)
+        #-----------------------------------------------
         
         # 2. Connect all signals from the View to the Controller's handler methods
         self._connect_signals()
 
         # 3. Initialize Serial Communicatiom
         self.assign_numbered_serial_ports_to_combo_box()
+
+
 
     def _connect_signals(self):
         """
@@ -49,7 +80,7 @@ class AppController:
     # --- Controller Event Handlers (Logic) ---
     # =====================================================================
     # =====================================================================
-    
+
     def handle_combobox_change(self, index):
         """Updates the Model state and the View label based on the new ComboBox selection."""
         selected_text = self.view.combo_box.currentText()
@@ -90,12 +121,27 @@ class AppController:
         self.model.send_data(committed_text)
 
     def handle_button_a_click(self):
-        """Example handler for Button A."""
+        """
+        Toggles the QTimer loop (starting and stopping the audio visualization).
+        (FIXED: This now correctly manages the QTimer)
+        """
+        if self.plot_timer.isActive():
+            self.plot_timer.stop()
+            self.view.button_a.setText("▶️ Start Audio Plot")
+            print("CONTROLLER: Audio visualization paused.")
+        else:
+            # Reset the index to start from the beginning of the file
+            self.current_sample_index = 0
+            self.plot_timer.start()
+            self.view.button_a.setText("⏸️ Pause Audio Plot")
+            print("CONTROLLER: Audio visualization started.")
+            
+        """Example handler for Button A.
         print("CONTROLLER: Button A clicked. Executing application action.")
         self.view.text_input.setEnabled(True)
         self.view.text_input.setPlaceholderText("Type here...")
         self.view.text_input.value = ""
-        self.model.set_committed_input_text("")
+        self.model.set_committed_input_text("")"""
         ##TODO: Make the text input reset
 
 
@@ -115,6 +161,47 @@ class AppController:
 
     def on_cleared_input_text(self):
         print("The input field has been cleared!")
+
+    # ======== 
+    # --- Audio Visualization
+
+    def update_live_bar(self):
+        """
+        Processes the next frame of audio data, updates the visualization,
+        and sends the normalized intensity over serial.
+        (This method is connected to the QTimer's timeout signal).
+        """
+        
+        # Ensure we have data
+        total_samples = len(self.full_audio_samples)
+        if total_samples == 0 or self.full_audio_samples.size == 0:
+            self.view.intensity_plot.plot_frame_intensity(0, 0)
+            return
+
+        # 1. Retrieve Raw Audio Frame (Simulation of Input Stream)
+        start_index = self.current_sample_index
+        end_index = start_index + self.samples_per_frame
+        
+        # Handle circular wrapping
+        if end_index >= total_samples:
+            # Logic to wrap the frame back to the start of the audio array
+            frame = np.concatenate((self.full_audio_samples[start_index:], 
+                                    self.full_audio_samples[:end_index - total_samples]))
+            self.current_sample_index = end_index - total_samples
+        else:
+            frame = self.full_audio_samples[start_index:end_index]
+            self.current_sample_index += self.samples_per_frame
+
+        # 2. Process Data (RMS Calculation & Normalization)
+        # Note: Must handle potential conversion to float/int types
+        raw_rms = np.sqrt(np.mean(frame.astype(float)**2))
+        MAX_16BIT = 32768.0 
+        normalized_value = min(raw_rms / MAX_16BIT, 1.0) # Normalized from 0.0 to 1.0
+        
+        # 3. Update View and Send Data to Model
+        
+        # A. Update View: Pass raw and normalized values to the plotter
+        self.view.intensity_plot.plot_frame_intensity(raw_rms, normalized_value)
 
     # =====================================================================
     # =====================================================================

@@ -14,7 +14,7 @@ source venv/bin/activate
 
 Install
 ```bash
-pip install matplotlib numpy pyserial PySide6
+pip install numpy scipy os matplotlib numpy pyserial PySide6
 ```
 
 Deactivate

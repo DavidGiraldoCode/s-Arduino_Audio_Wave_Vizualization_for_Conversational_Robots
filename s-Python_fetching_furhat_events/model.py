@@ -1,6 +1,11 @@
-import serial
+import serial # For serial communication
 import serial.tools.list_ports
-from PySide6.QtCore import Qt, QAbstractListModel, Signal
+import os     # For path manipulation
+import numpy as np # For array manipulation
+from scipy.io import wavfile # <-- FIX: Now imported at module level
+from PySide6.QtCore import Qt, QAbstractListModel, Signal 
+
+from scipy.io import wavfile # <-- FIX: Now imported at module level
 
 # --- GLOBAL CONSTANTS ---
 SERIAL_BAUDRATE = 9600
@@ -33,6 +38,9 @@ class AppModel(QAbstractListModel):
         self._ports = []
         self._serial_conn = None
         self._baudrate = SERIAL_BAUDRATE
+
+        # ---- Audio debugging
+        
     
     # --- QAbstractListModel required methods (for complex views, simple placeholder here) ---
     def data(self, index, role=Qt.DisplayRole):
@@ -82,6 +90,48 @@ class AppModel(QAbstractListModel):
         """Returns the last committed input text."""
         return self._committed_input_text
     
+    # ======== Load Audio File
+    def load_audio_samples(self, file_path):
+        """
+        Loads the raw audio samples from a local WAV file path.
+        Returns (sample_rate, samples) tuple, or a default set on failure.
+        
+        Architecture Rationale: This is data acquisition, so it belongs in the Model. 
+        It isolates the file system logic and external library (scipy) dependency.
+        """
+        try:
+            # 1. Build the absolute path relative to the current file (model.py)
+            absolute_file_path = os.path.join(os.path.dirname(__file__), file_path)
+            
+            print(f"Model: Attempting to load audio from: {absolute_file_path}")
+            
+            # 2. Read the WAV file using scipy
+            # fs = sample rate (int), samples = raw audio data (NumPy array)
+            fs, samples = wavfile.read(absolute_file_path)
+            
+            # 3. Handle Stereo Data (If the audio has multiple channels)
+            # Visualization usually works better with mono, so we select the first channel.
+            if samples.ndim > 1:
+                samples = samples[:, 0]
+                print("Model: Converted stereo audio to mono (first channel).")
+                
+            print(f"Model: Audio loaded successfully. Sample rate: {fs} Hz. Total samples: {len(samples)}.")
+            return fs, samples
+            
+        except FileNotFoundError:
+            print(f"Model Error: Audio file '{file_path}' not found at {absolute_file_path}. Returning silent data.")
+            return 44100, np.array([0], dtype=np.int16)
+            
+        except ImportError:
+            # Handles the case where scipy is not installed
+            print("Model Error: 'scipy' is required but not installed. Returning silent data.")
+            return 44100, np.array([0], dtype=np.int16)
+            
+        except Exception as e:
+            print(f"Model Error: Failed to read or parse WAV file: {e}. Returning silent data.")
+            # Fallback to a safe, empty result
+            return 44100, np.array([0], dtype=np.int16)
+
     # =====================================================================
     # =====================================================================
     # --- SERIAL COMMUNICATION METHODS ---
