@@ -1,0 +1,54 @@
+```
+# Standard Python .gitignore file
+
+# Byte-compiled / optimized / DLL files
+
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Setup and build files
+
+/build/
+/dist/
+*.egg-info/
+.coverage
+.tox/
+.mypy_cache/
+.pytest_cache/
+htmlcov/
+nosetests.xml
+coverage.xml
+
+# Virtual environment
+
+# Recommended naming conventions for virtual environments:
+
+.venv/
+/venv/
+/env/
+/ENV/
+
+# OS/Editor generated files
+
+.DS_Store
+.vscode/
+.idea/
+.history
+Thumbs.db
+
+# PySide/Qt/GUI specific artifacts
+
+# Temporary files generated during resource compilation (.qrc, .ui)
+
+# Note: The QRC file content itself (audio_test.wav) should be committed,
+
+# but the generated C++ or Python code *linking* to it is often ignored.
+
+*.pyc
+*.pyd
+*.moc
+*.qrc
+qrc_*.py
+```
