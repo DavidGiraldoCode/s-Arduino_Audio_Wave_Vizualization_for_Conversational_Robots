@@ -25,10 +25,20 @@ coverage.xml
 
 # Recommended naming conventions for virtual environments:
 
-.venv/
-/venv/
-/env/
-/ENV/
+# Matches any folder named .venv/
+.venv/  
+
+# Matches a folder named venv/ at the root level
+/venv/  
+
+# Matches a folder named env/ at the root level
+/env/   
+
+# Matches a folder named ENV/ at the root level
+/ENV/   
+
+# Matches any directory named venv
+venv/
 
 # OS/Editor generated files
 
