@@ -1,5 +1,7 @@
 # Session notes
 
+# Settup
+
 Create
 ```bash
 python3 -m venv venv
@@ -12,12 +14,17 @@ source venv/bin/activate
 
 Install
 ```bash
-pip install PySide6
+pip install matplotlib numpy pyserial PySide6
 ```
 
 Deactivate
 ```bash
 deactivate
+```
+
+To run it
+```
+python3 myApp.py
 ```
 
 # Real-Time Audio-Serial MV Architecture
@@ -33,6 +40,7 @@ This table explains the separation of concerns for implementing real-time serial
 # Refs
 
 Metadata:
+npc-arnold-greetings
     date            : 2024
     genre           : Sound Effect
     artist          : SoundBiter
