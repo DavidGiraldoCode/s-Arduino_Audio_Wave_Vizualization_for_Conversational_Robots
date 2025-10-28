@@ -6,6 +6,10 @@ from scipy.io import wavfile # <-- FIX: Now imported at module level
 from PySide6.QtCore import Qt, QAbstractListModel, Signal 
 
 from scipy.io import wavfile # <-- FIX: Now imported at module level
+import asyncio # New import for async functionality
+
+import struct # Get data from the Websocket
+from websockets.asyncio.client import connect
 
 # --- GLOBAL CONSTANTS ---
 SERIAL_BAUDRATE = 9600
@@ -23,6 +27,9 @@ class AppModel(QAbstractListModel):
     """
     To add more just declare: myNewSignal = Signal()
     """
+
+    # NEW SIGNAL: Announces when the slow async task is complete
+    async_task_completed = Signal(str)
 
     # ------------------------- CONSTRUCTOR
 
@@ -131,6 +138,61 @@ class AppModel(QAbstractListModel):
             print(f"Model Error: Failed to read or parse WAV file: {e}. Returning silent data.")
             # Fallback to a safe, empty result
             return 44100, np.array([0], dtype=np.int16)
+
+    # =====================================================================
+    # =====================================================================
+    # --- ASYNCIO IMPLEMENTATION ---
+    # =====================================================================
+    # =====================================================================
+    async def _listen_to_audio_form_websocket(self):
+        try:
+            async with connect("ws://127.0.0.1:8765") as websocket:
+                print("Connected to server")
+
+                while True:
+                    frame = await websocket.recv()
+                    left, right = struct.unpack('<hh', frame)
+                    print(f"Audio Frame: L={left}, R={right}")
+
+        except Exception as e:
+            print(f"Connection closed: {e}")
+
+    async def _slow_async_operation(self):
+        """
+        The actual asynchronous function that simulates a long-running I/O task.
+        Runs entirely within the asyncio event loop.
+        """
+        print("Model Async: Task started, awaiting 2 seconds...")
+        # AWAIT is the keyword that yields control back to the event loop, 
+        # allowing the GUI to remain responsive.
+        await asyncio.sleep(2) 
+        print("Model Async: Wait finished. Emitting result signal.")
+        
+        # When emitting a signal from an async task, use Qt's synchronization 
+        # mechanism (which is safe because qasync ensures the loop is running 
+        # on the main thread).
+        self.async_task_completed.emit("Async Task Completed!")
+
+    def start_async_operation(self):
+        """
+        Synchronous public method to be called by the Controller.
+        Schedules the async task to run on the event loop.
+        """
+        if self.is_serial_connected():
+             return "Please disconnect the serial port first."
+        
+        try:
+            # Get the running asyncio loop (made accessible by the qasync integration)
+            loop = asyncio.get_running_loop() 
+            # Schedule the coroutine object as a Task to run in the background.
+            loop.create_task(self._slow_async_operation())
+            loop.create_task(self._listen_to_audio_form_websocket())
+            return "Async Task Scheduled (Non-blocking)."
+        except RuntimeError:
+            # This catches the error if no asyncio loop is currently running
+            return "Error: Asyncio event loop not running. Did you start the app with qasync?"
+
+
 
     # =====================================================================
     # =====================================================================

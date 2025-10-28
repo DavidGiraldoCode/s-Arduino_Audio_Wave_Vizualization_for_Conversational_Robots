@@ -12,7 +12,7 @@ from PySide6.QtCore import Qt, QSize
 
 # Global constans related to View (not the model)
 WINDOW_WIDTH = 400
-WINDOW_HEIGHT = 600
+WINDOW_HEIGHT = 720
 WINDOW_TITLE = "Modular PySide6 For Research Projects"
 MARGINGS_T = MARGINGS_B = MARGINGS_L = MARGINGS_R = 20
 FIXED_HEIGHT = 40
@@ -161,6 +161,11 @@ class View(QMainWindow):
         self.committed_echo_label = QLabel(f"Committed Text (ENTER): {self.model.get_committed_input_text()}")
         self.committed_echo_label.setWordWrap(True)
         self.committed_echo_label.setObjectName("CommittedEchoLabel")
+
+        # Mutable Text: Async Echo
+        self.async_status_label = QLabel("Waiting for an async call...⏳")
+        self.async_status_label.setWordWrap(True)
+        self.async_status_label.setObjectName("AsyncCallEchoLabel")
         
         # Button A
         self.button_a = QPushButton("Button A: Print to Console")
@@ -169,6 +174,9 @@ class View(QMainWindow):
         # Button B
         self.button_b = QPushButton("Button B: Print to Console")
         self.button_b.setFixedHeight(FIXED_HEIGHT)
+
+        self.button_c = QPushButton("Async call")
+        self.button_c.setFixedHeight(FIXED_HEIGHT)
 
         # --- Widget Stacking (View Layout) ---
         self.layout.addWidget(self.title_label)
@@ -187,6 +195,8 @@ class View(QMainWindow):
 
         self.layout.addWidget(self.button_a)
         self.layout.addWidget(self.button_b)
+        self.layout.addWidget(self.async_status_label)
+        self.layout.addWidget(self.button_c)
         
         # Add a stretch at the bottom to push everything to the top
         self.layout.addStretch()
