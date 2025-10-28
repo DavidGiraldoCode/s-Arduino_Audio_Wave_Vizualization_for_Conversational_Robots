@@ -197,13 +197,6 @@ class AppModel(QAbstractListModel):
             print(f"Model Error: An unexpected error occurred: {e}")
             self._serial_conn = None
             return False
-
-    def send_data(self, data):
-        """Sends data over the serial connection (Placeholder)."""
-        if self._serial_conn:
-            print(f"MODEL: Sending data: {data}")
-        else:
-            print("MODEL: Error - Cannot send data, serial connection is not active.")
     
     def send_data(self, data):
         """
@@ -222,7 +215,7 @@ class AppModel(QAbstractListModel):
             
             # 3. Write data to the port
             self._serial_conn.write(data_to_send)
-            # print(f"Model: Data sent successfully: {data}") # Uncomment for debugging
+            print(f"Model: Data sent successfully: {data}") # Uncomment for debugging
             return True
             
         except serial.SerialTimeoutException:
