@@ -1,5 +1,6 @@
 import sys
-
+# NEW IMPORT: Need asyncio in the Controller to interact with the Model's async scheduling
+import asyncio 
 import numpy as np
 
 from PySide6.QtCore import QTimer, QSize, Qt, QUrl, QModelIndex
@@ -27,7 +28,7 @@ class AppController:
         # 2. Instantiate and attach the Matplotlib Canvas
         self.view.intensity_plot = AudioIntensityCanvas()
         # Insert the canvas at the top of the layout (index 0)
-        self.view.layout.insertWidget(0, self.view.intensity_plot) 
+        self.view.layout.insertWidget(2, self.view.intensity_plot) 
 
         # 3. Load Audio Data and Set Frame Pointers (CORRECTED DATA ASSIGNMENT)
         self.sample_rate, self.full_audio_samples = self.model.load_audio_samples(ASSET_AUDIO_URL)
@@ -72,10 +73,14 @@ class AppController:
         # Buttons: Click events
         self.view.button_a.clicked.connect(self.handle_button_a_click)
         self.view.button_b.clicked.connect(self.handle_button_b_click)
+        # Async button
+        self.view.button_c.clicked.connect(self.handle_button_c_click)
 
         # Application specific events Slot (Event Handler)
         self.model.input_text_commited.connect(self.on_commited_value_change)
         self.model.input_text_cleared.connect(self.on_cleared_input_text)
+        # NEW CONNECTION: Model Signal for Async completion
+        self.model.async_task_completed.connect(self.on_async_task_complete)
 
     # =====================================================================
     # =====================================================================
@@ -153,6 +158,22 @@ class AppController:
         print("CONTROLLER: Button B clicked. Executing application action.")
         self.model.send_data(180)
 
+    def handle_button_c_click(self):
+        """
+        Schedules the 2-second async task in the Model.
+        This call is SYNCHRONOUS and non-blocking to the GUI.
+        """
+        self.view.async_status_label.setText("Async Status: **Task Scheduled, Waiting...** (GUI is responsive)")
+        print("CONTROLLER: Scheduling async task via Model...")
+        
+        # Call the Model's scheduling method
+        result_message = self.model.start_async_operation()
+        
+        # If the task was scheduled successfully, the Model will update the View 
+        # later via the `async_task_completed` signal.
+        if "Error" in result_message:
+             self.view.async_status_label.setText(f"Async Status: {result_message}")
+             print(f"CONTROLLER Error: {result_message}")
     # =====================================================================
     # =====================================================================
     # ----- Application Specific Event Handlers (not OS related)
@@ -165,6 +186,13 @@ class AppController:
     def on_cleared_input_text(self):
         print("The input field has been cleared!")
 
+    def on_async_task_complete(self, message):
+        """
+        SLOT: Triggered by the Model's signal after the async task is done.
+        This safely updates the GUI on the main thread.
+        """
+        print(f"CONTROLLER: Received completion signal with message: '{message}'")
+        self.view.async_status_label.setText(f"Async Status: **{message}**")
     # ======== 
     # --- Audio Visualization
 
