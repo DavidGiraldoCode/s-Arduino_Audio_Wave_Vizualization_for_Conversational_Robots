@@ -1,11 +1,13 @@
 import sys
 
 import numpy as np
+
+from PySide6.QtCore import QTimer, QSize, Qt, QUrl, QModelIndex
+from PySide6.QtWidgets import QApplication
+
 # Import Model and View classes from their respective files
 from model import AppModel 
 from view import AudioIntensityCanvas, View
-from PySide6.QtCore import QTimer, QSize, Qt, QUrl, QModelIndex
-from PySide6.QtWidgets import QApplication
 
 # --- GLOBAL CONSTANTS ---
 PLOT_UPDATE_INTERVAL = 50 # 50ms = 20 FPS
@@ -17,7 +19,7 @@ class AppController:
     Manages initialization, signal connections, and event handling logic.
     """
     def __init__(self):
-        # 1. Initialize Model and View
+        # 1. Initialize Model and View -----------------------------------------------
         self.model = AppModel()
         self.view = View(self.model)
 
@@ -114,11 +116,12 @@ class AppController:
         
         # 2. Update the View's committed echo label
         self.view.committed_echo_label.setText(f"Committed Text (ENTER): {self.model.get_committed_input_text()}")
-        self.view.text_input.setEnabled(False)
+        #self.view.text_input.setEnabled(False)
         
         # 3. Print example data transmission to console (e.g., sending data to Arduino)
         print(f"CONTROLLER: Committing and Sending data: '{committed_text}'")
         self.model.send_data(committed_text)
+        
 
     def handle_button_a_click(self):
         """
@@ -148,7 +151,7 @@ class AppController:
     def handle_button_b_click(self):
         """Example handler for Button B."""
         print("CONTROLLER: Button B clicked. Executing application action.")
-        self.model.send_data(0)
+        self.model.send_data(180)
 
     # =====================================================================
     # =====================================================================
@@ -202,6 +205,10 @@ class AppController:
         
         # A. Update View: Pass raw and normalized values to the plotter
         self.view.intensity_plot.plot_frame_intensity(raw_rms, normalized_value)
+
+        # 4. Send to Arduino through the Serial port
+        rgd_bounded_val = int(normalized_value * 255)
+        self.model.send_data(rgd_bounded_val)
 
     # =====================================================================
     # =====================================================================
