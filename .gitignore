@@ -62,3 +62,13 @@ Thumbs.db
 *.qrc
 qrc_*.py
 ```
+
+# Ignore environment/config files which hold secrets
+
+.env
+
+# Typical Python files to ignore
+
+**pycache**/
+\*.pyc
+venv/
