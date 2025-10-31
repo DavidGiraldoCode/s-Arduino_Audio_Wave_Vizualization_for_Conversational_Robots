@@ -47,9 +47,40 @@ class AudioIntensityCanvas(QWidget):
         self.bar_raw = None
         self.bar_norm = None
         
-        self.init_plot_style()
+        self.init_plot_style_only_normal()
 
     # --- Function Definition (Plotting Interface) ---
+    def init_plot_style_only_normal(self):
+        """Sets up the initial appearance of the plot, showing only the Normalized bar."""
+        self.ax.clear()
+        
+        # Set the requested background color for the axes
+        self.ax.set_facecolor(PLOT_BG_COLOR) 
+        
+        # Style grid lines, ticks, and labels for visibility on dark background
+        self.ax.spines['bottom'].set_color('white')
+        self.ax.spines['top'].set_color('white')
+        self.ax.spines['right'].set_color('white')
+        self.ax.spines['left'].set_color('white')
+        self.ax.tick_params(axis='x', colors='white')
+        self.ax.tick_params(axis='y', colors='white')
+        
+        # Updated Title
+        self.ax.set_title("Real-Time normalized audio intensity", color='white')
+        
+        # Center the single bar on the X-axis (e.g., at position 0.5)
+        self.ax.set_xticks([0.5])
+        self.ax.set_xticklabels(['Normalized'], color='white')
+        
+        self.ax.set_ylim(0, 1.1) # Max Y-limit for the bars
+        #self.ax.set_ylabel("Amplitude / Intensity (0.0 to 1.0)", color='white')
+        self.ax.grid(axis='y', alpha=0.3, color='gray')
+        
+        # Re-initialize the bar object (only the normalized one, centered at 0.5)
+        self.bar_norm = self.ax.bar(0.5, 0, width=0.35, color='lime')
+        
+        self.figure.tight_layout(pad=1.5)
+
     def init_plot_style(self):
         """Sets up the initial appearance of the plot, including the dark background."""
         self.ax.clear()
@@ -101,6 +132,18 @@ class AudioIntensityCanvas(QWidget):
         # Redraw the canvas for a real-time effect
         self.canvas.draw()
 
+    def plot_frame_intensity_normal(self, normalized_value):
+        """
+        Public interface: Updates the two intensity bars with new values.
+        """
+        if not self.bar_norm:
+            return
+        
+        # 2. Normalized Bar Update: Clamped between 0.0 and 1.0
+        self.bar_norm[0].set_height(normalized_value)
+
+        self.canvas.draw()
+
 
 class View(QMainWindow):
     """
@@ -129,12 +172,12 @@ class View(QMainWindow):
         # --- Widget Creation ---
 
         # Static Title
-        self.title_label = QLabel("Example Modular Architecture")
+        self.title_label = QLabel("Real-time Audio controller")
         self.title_label.setObjectName("TitleLabel")
         self.title_label.setStyleSheet("font-size: 18pt; font-weight: bold;")
 
         # Static Text Description
-        self.description_label = QLabel("Simple GUI to test MV-C structure and user interactions.")
+        self.description_label = QLabel("Send real-time audio input stream through the serial port")
         self.description_label.setWordWrap(True)
         
         # ComboBox Input
@@ -144,7 +187,7 @@ class View(QMainWindow):
         #self.combo_box.addItems(self.model.get_dropdown_options())
         
         # Mutable Text based on ComboBox
-        self.combo_result_label = QLabel("ComboBox Selection: None")
+        self.combo_result_label = QLabel("Select Arduino Port")
         self.combo_result_label.setObjectName("ComboResultLabel")
 
         # Text Input Field
@@ -153,9 +196,13 @@ class View(QMainWindow):
         self.text_input.setFixedHeight(FIXED_HEIGHT)
 
         # Mutable Text: Live Echo
-        self.live_echo_label = QLabel("Live Echo: Start typing...")
+        self.live_echo_label = QLabel("Input the URL and press ENTER")
         self.live_echo_label.setWordWrap(True)
         self.live_echo_label.setObjectName("LiveEchoLabel")
+
+        self.text_input_label = QLabel("Input the URL and press ENTER")
+        self.text_input_label.setWordWrap(True)
+        self.text_input_label.setObjectName("TextInputLabel")
 
         # Mutable Text: Committed Echo
         self.committed_echo_label = QLabel(f"Committed Text (ENTER): {self.model.get_committed_input_text()}")
@@ -175,29 +222,42 @@ class View(QMainWindow):
         self.button_b = QPushButton("Button B: Print to Console")
         self.button_b.setFixedHeight(FIXED_HEIGHT)
 
-        self.button_c = QPushButton("Async call")
+        self.button_c = QPushButton("Connect")
         self.button_c.setFixedHeight(FIXED_HEIGHT)
 
+        self.button_d = QPushButton("Fetch real-time audio")
+        self.button_d.setFixedHeight(FIXED_HEIGHT)
+
         # --- Widget Stacking (View Layout) ---
+        
         self.layout.addWidget(self.title_label)
-        self.layout.addSpacing(S_SMALL)
+        #self.layout.addSpacing(S_SMALL)
         self.layout.addWidget(self.description_label)
         self.layout.addSpacing(S_MEDIUM)
-        
-        self.layout.addWidget(self.combo_box)
-        self.layout.addWidget(self.combo_result_label)
-        self.layout.addSpacing(S_SMALL)
 
+        self.layout.addWidget(self.text_input_label)
         self.layout.addWidget(self.text_input)
-        self.layout.addWidget(self.live_echo_label)
-        self.layout.addWidget(self.committed_echo_label)
-        self.layout.addSpacing(S_SMALL)
+        self.layout.addWidget(self.button_c) # Connect to Server
 
-        self.layout.addWidget(self.button_a)
-        self.layout.addWidget(self.button_b)
-        self.layout.addWidget(self.async_status_label)
-        self.layout.addWidget(self.button_c)
+        #self.layout.addWidget(self.committed_echo_label)
+        self.layout.addSpacing(S_SMALL)
+        self.layout.addWidget(self.button_d) # Listening to WS
         
+        self.layout.addSpacing(S_SMALL)
+        self.layout.addWidget(self.combo_result_label)
+        self.layout.addWidget(self.combo_box)
+
+
+        #self.layout.addWidget(self.button_a)
+        #self.layout.addWidget(self.button_b)
+        #self.layout.addWidget(self.async_status_label)
+        
+
+        # ? Testing WebSockets only
+        #self.layout.addWidget(self.async_status_label)
+        #self.layout.addWidget(self.button_c)
+        #self.layout.addWidget(self.button_d)
+
         # Add a stretch at the bottom to push everything to the top
         self.layout.addStretch()
 

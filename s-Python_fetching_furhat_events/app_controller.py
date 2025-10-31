@@ -24,11 +24,14 @@ class AppController:
         self.model = AppModel()
         self.view = View(self.model)
 
+        
         #----------------------------------------------- Audio debugging
         # 2. Instantiate and attach the Matplotlib Canvas
         self.view.intensity_plot = AudioIntensityCanvas()
         # Insert the canvas at the top of the layout (index 0)
-        self.view.layout.insertWidget(2, self.view.intensity_plot) 
+
+        # ? Hiding plot while testing WS
+        self.view.layout.insertWidget(6, self.view.intensity_plot) 
 
         # 3. Load Audio Data and Set Frame Pointers (CORRECTED DATA ASSIGNMENT)
         self.sample_rate, self.full_audio_samples = self.model.load_audio_samples(ASSET_AUDIO_URL)
@@ -41,10 +44,10 @@ class AppController:
 
         self.current_sample_index = 0
         # 4. Initialize QTimer
-        self.plot_timer = QTimer()
-        self.plot_timer.setInterval(PLOT_UPDATE_INTERVAL)
+        #self.plot_timer = QTimer()
+        #self.plot_timer.setInterval(PLOT_UPDATE_INTERVAL)
         # The CONNECTION: Established in __init__
-        self.plot_timer.timeout.connect(self.update_live_bar)
+        #self.plot_timer.timeout.connect(self.update_live_bar)
         #-----------------------------------------------
         
         # 2. Connect all signals from the View to the Controller's handler methods
@@ -53,6 +56,9 @@ class AppController:
         # 3. Initialize Serial Communicatiom
         self.assign_numbered_serial_ports_to_combo_box()
 
+        # ------ WS
+        self.is_ws_connected = False
+        self.is_ws_fetching_data = False
 
 
     def _connect_signals(self):
@@ -75,12 +81,19 @@ class AppController:
         self.view.button_b.clicked.connect(self.handle_button_b_click)
         # Async button
         self.view.button_c.clicked.connect(self.handle_button_c_click)
+        self.view.button_d.clicked.connect(self.handle_button_d_click)
+
 
         # Application specific events Slot (Event Handler)
         self.model.input_text_commited.connect(self.on_commited_value_change)
         self.model.input_text_cleared.connect(self.on_cleared_input_text)
         # NEW CONNECTION: Model Signal for Async completion
         self.model.async_task_completed.connect(self.on_async_task_complete)
+
+        # Web Socket connections
+        #self.model.ws_data_arrived.connect(self.on_ws_data_arrive)
+        self.model.data_for_draw_calls_updated.timeout.connect(self.on_update_data_for_draw_calls)
+        self.model.data_for_draw_calls_updated.start(PLOT_UPDATE_INTERVAL)
 
     # =====================================================================
     # =====================================================================
@@ -91,6 +104,8 @@ class AppController:
     def handle_combobox_change(self, index):
         """Updates the Model state and the View label based on the new ComboBox selection."""
         selected_text = self.view.combo_box.currentText()
+         # 2. Update the View's mutable label
+        self.view.combo_result_label.setText(f"Select Arduino Port: {selected_text}")
         
         # 1. Update the Model (if necessary for the actual application logic)
         # Example: self.model.connect_serial(selected_text)
@@ -101,8 +116,7 @@ class AppController:
         print(f"Its going to connect to {selected_text}")
         self.model.connect_serial(selected_text)
 
-        # 2. Update the View's mutable label
-        self.view.combo_result_label.setText(f"ComboBox Selection: {selected_text}")
+       
 
     def handle_live_input_change(self, new_text):
         """Updates the Model state and the live echo label as the user types."""
@@ -110,7 +124,7 @@ class AppController:
         self.model.set_live_input_text(new_text)
         
         # 2. Update the View's live echo label
-        self.view.live_echo_label.setText(f"Live Echo: *{self.model.get_live_input_text()}*")
+        #self.view.live_echo_label.setText(f"Live Echo: {self.model.get_live_input_text()}")
 
     def handle_input_commit(self):
         """Updates the Model state and the committed text label when ENTER is pressed."""
@@ -125,7 +139,7 @@ class AppController:
         
         # 3. Print example data transmission to console (e.g., sending data to Arduino)
         print(f"CONTROLLER: Committing and Sending data: '{committed_text}'")
-        self.model.send_data(committed_text)
+        self.model.send_serial_data(committed_text)
         
 
     def handle_button_a_click(self):
@@ -156,27 +170,17 @@ class AppController:
     def handle_button_b_click(self):
         """Example handler for Button B."""
         print("CONTROLLER: Button B clicked. Executing application action.")
-        self.model.send_data(180)
+        self.model.send_serial_data(180)
 
     def handle_button_c_click(self):
-        """
-        Schedules the 2-second async task in the Model.
-        This call is SYNCHRONOUS and non-blocking to the GUI.
-        """
-        self.view.async_status_label.setText("Async Status: **Task Scheduled, Waiting...** (GUI is responsive)")
-        print("CONTROLLER: Scheduling async task via Model...")
-        
-        # Call the Model's scheduling method
-        result_message = self.model.start_async_operation()
-        
-        # If the task was scheduled successfully, the Model will update the View 
-        # later via the `async_task_completed` signal.
-        if "Error" in result_message:
-             self.view.async_status_label.setText(f"Async Status: {result_message}")
-             print(f"CONTROLLER Error: {result_message}")
+        self.model.schedule_ws_connection()
+    
+    def handle_button_d_click(self):   
+        self.model.schedule_ws_data_retrieval()
+
     # =====================================================================
     # =====================================================================
-    # ----- Application Specific Event Handlers (not OS related)
+    # ----- Application Specific Event Handlers (not Widget-OS related)
     # =====================================================================
     # =====================================================================
 
@@ -193,10 +197,29 @@ class AppController:
         """
         print(f"CONTROLLER: Received completion signal with message: '{message}'")
         self.view.async_status_label.setText(f"Async Status: **{message}**")
+
+    def on_ws_data_arrive(self, data):
+        print(f"WebSocket packages: {data}")
+        #num = int(data)
+        #num = np.sqrt( num * num)
+        #normal = num/30000
+
+        #self.view.intensity_plot.plot_frame_intensity(0.5, 0.5)
+
+    def on_update_data_for_draw_calls(self):
+        data_point = self.model.get_latest_ws_package_thread_safe()
+        #print(f"Render! {data_point}")
+        absolute_data = 0.0
+        absolute_data = np.absolute(data_point[0])
+        normal_data = absolute_data/30000.0
+        rgb_bound = int(normal_data * 255.0)
+        self.view.intensity_plot.plot_frame_intensity_normal(normal_data)
+        self.model.send_serial_data(rgb_bound)
+        #self.update_live_bar(self, data_point)
     # ======== 
     # --- Audio Visualization
 
-    def update_live_bar(self):
+    def update_audio_bar_from_audio_file(self, data):
         """
         Processes the next frame of audio data, updates the visualization,
         and sends the normalized intensity over serial.
@@ -204,7 +227,9 @@ class AppController:
         """
         
         # Ensure we have data
-        total_samples = len(self.full_audio_samples)
+        #total_samples = len(self.full_audio_samples) # from File
+        total_samples = data
+
         if total_samples == 0 or self.full_audio_samples.size == 0:
             self.view.intensity_plot.plot_frame_intensity(0, 0)
             return
@@ -235,9 +260,52 @@ class AppController:
         self.view.intensity_plot.plot_frame_intensity(raw_rms, normalized_value)
 
         # 4. Send to Arduino through the Serial port
-        rgd_bounded_val = int(normalized_value * 255)
-        self.model.send_data(rgd_bounded_val)
+        #rgd_bounded_val = int(normalized_value * 255)
+        #self.model.send_serial_data(rgd_bounded_val)
 
+    def update_live_bar(self, data):
+        """
+        Processes the next frame of audio data, updates the visualization,
+        and sends the normalized intensity over serial.
+        (This method is connected to the QTimer's timeout signal).
+        """
+        
+        # Ensure we have data
+        #total_samples = len(self.full_audio_samples) # from File
+        total_samples = data
+        
+        if total_samples == 0 or self.full_audio_samples.size == 0:
+            self.view.intensity_plot.plot_frame_intensity(0, 0)
+            return
+
+        # 1. Retrieve Raw Audio Frame (Simulation of Input Stream)
+        start_index = self.current_sample_index
+        end_index = start_index + self.samples_per_frame
+        
+        # Handle circular wrapping
+        if end_index >= total_samples:
+            # Logic to wrap the frame back to the start of the audio array
+            frame = np.concatenate((self.full_audio_samples[start_index:], 
+                                    self.full_audio_samples[:end_index - total_samples]))
+            self.current_sample_index = end_index - total_samples
+        else:
+            frame = self.full_audio_samples[start_index:end_index]
+            self.current_sample_index += self.samples_per_frame
+
+        # 2. Process Data (RMS Calculation & Normalization)
+        # Note: Must handle potential conversion to float/int types
+        raw_rms = np.sqrt(np.mean(frame.astype(float)**2))
+        MAX_16BIT = 32768.0 
+        normalized_value = min(raw_rms / MAX_16BIT, 1.0) # Normalized from 0.0 to 1.0
+        
+        # 3. Update View and Send Data to Model
+        
+        # A. Update View: Pass raw and normalized values to the plotter
+        self.view.intensity_plot.plot_frame_intensity(raw_rms, normalized_value)
+
+        # 4. Send to Arduino through the Serial port
+        #rgd_bounded_val = int(normalized_value * 255)
+        #self.model.send_serial_data(rgd_bounded_val)
     # =====================================================================
     # =====================================================================
     # ------ Serial Communication
