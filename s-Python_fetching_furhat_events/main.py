@@ -1,5 +1,6 @@
 import sys
 from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QCoreApplication
 import asyncio 
 
 # --- FIX: Reverting to the robust community-maintained bridge ---
@@ -13,15 +14,49 @@ from app_controller import AppController
 
 # --- Coroutine that keeps the asyncio loop alive indefinitely (required by qasync) ---
 async def wait_for_tasks():
-    """Keeps the asyncio event loop running until the Qt application exits."""
-    await asyncio.Future()
+    """
+    Keeps the asyncio event loop running until the Qt application exits.
+    
+    FIX: The asyncio.Future() is now stored and made globally accessible 
+    to be cancelled when the Qt application is about to quit.
+    """
+    global future_to_cancel
+    
+    # 1. Create the indefinite Future
+    future_to_cancel = asyncio.Future()
+    
+    try:
+        # 2. Pause the loop until cancellation
+        await future_to_cancel
+    except asyncio.CancelledError:
+        # Expected exception when the future is cancelled on exit
+        pass
 # -------------------------------------------------------------------
+
+# Global variable to hold the Future, allowing us to cancel it outside the async function.
+future_to_cancel = None
+
+
+def shutdown_async_loop():
+    """
+    Called by Qt's aboutToQuit signal (synchronous). 
+    It cancels the Future, which breaks the infinite 'await' in wait_for_tasks.
+    """
+    global future_to_cancel
+    if future_to_cancel and not future_to_cancel.done():
+        print("Cancelling indefinite async Future for graceful shutdown...")
+        future_to_cancel.cancel()
 
 def main():
     # 1. Standard PySide6 App setup
     # CRITICAL FIX: Use QAsyncApplication when using qasync to properly integrate the main loop.
     app = QAsyncApplication(sys.argv)
-    
+
+    # --- Graceful Shutdown Connection ---
+    # Connect the application's 'aboutToQuit' signal to our synchronous cancellation function.
+    QCoreApplication.instance().aboutToQuit.connect(shutdown_async_loop)
+    # -------------------------------------------------
+
     # 2. Instantiate the Controller (which creates the Model and View)
     controller = AppController()
     
@@ -37,6 +72,16 @@ def main():
         sys.exit(run(wait_for_tasks()))
     except Exception as e:
         print(f"An error occurred during application runtime: {e}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
 
 
 
@@ -65,7 +110,3 @@ def mainTwo():
     
     # Without asynchronism
     #sys.exit(app.exec())
-
-
-if __name__ == "__main__":
-    main()

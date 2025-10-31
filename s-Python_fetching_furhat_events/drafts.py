@@ -3,19 +3,17 @@ import serial.tools.list_ports
 import os     # For path manipulation
 import numpy as np # For array manipulation
 from scipy.io import wavfile # <-- FIX: Now imported at module level
-from PySide6.QtCore import Qt, QAbstractListModel, Signal, QTimer
+from PySide6.QtCore import Qt, QAbstractListModel, Signal 
+import asyncio # New import for async functionality
+import struct # For unpacking binary data
+from websockets.client import connect # For WebSocket connection
 
 from scipy.io import wavfile # <-- FIX: Now imported at module level
-import asyncio # New import for async functionality
-
-import struct # Get data from the Websocket
-from websockets.asyncio.client import connect
 
 # --- GLOBAL CONSTANTS ---
 SERIAL_BAUDRATE = 9600
-WEB_SOCKET_SERVER_URL = "ws://127.0.0.1:8765"
 # Example options list for the QComboBox
-COMBO_OPTIONS = [f"Item {i}" for i in range(1, 11)]
+COMBO_OPTIONS = [f"Item {i}" for i in range(1, 11)] 
 
 
 class AppModel(QAbstractListModel):
@@ -25,13 +23,9 @@ class AppModel(QAbstractListModel):
     # --- Signal (Event Emitter)
     input_text_commited = Signal() #Class Descriptor
     input_text_cleared = Signal()
-    """
-    To add more just declare: myNewSignal = Signal()
-    """
-
     # NEW SIGNAL: Announces when the slow async task is complete
     async_task_completed = Signal(str)
-    #ws_data_arrived = Signal(str)
+    # REMOVED: ws_data_arrived signal is now replaced by direct state access
 
     # ------------------------- CONSTRUCTOR
 
@@ -42,25 +36,21 @@ class AppModel(QAbstractListModel):
         self._dropdown_options = COMBO_OPTIONS
         self._live_input_text = ""
         self._committed_input_text = "N/A"
-
+        
         # --- Serial Communication State ---
         self._ports = []
         self._serial_conn = None
         self._baudrate = SERIAL_BAUDRATE
 
+        # --- ASYNCIO / WEBSOCKET STATE ---
+        # Queue for raw audio frames (L, R tuples)
+        self.ws_audio_queue = asyncio.Queue() 
+        # State variable to hold the latest *normalized* value for the timer to read
+        self._latest_ws_normalized_value = 0.0
+
         # ---- Audio debugging
-
-        # -------- WebSocket Instance
-        self.WEB_SOCKET_SERVER_URL = "ws://127.0.0.1:8765"
-        self._ws_server_instance = None
-        self._is_ws_connected = False # Initial state
-        self._is_ws_fetching_data = False
-        self._ws_listener_task = None     # To hold the reference to the running listener
-        self._ws_processor_task = None    # To hold the reference to the running processor
-        self._ws_data_queue = asyncio.Queue()
-        self._ws_latest_package = (0,0)
-        self.data_for_draw_calls_updated = QTimer()
-
+        
+    
     # --- QAbstractListModel required methods (for complex views, simple placeholder here) ---
     def data(self, index, role=Qt.DisplayRole):
         if 0 <= index.row() < self.rowCount() and role == Qt.DisplayRole:
@@ -150,184 +140,111 @@ class AppModel(QAbstractListModel):
             print(f"Model Error: Failed to read or parse WAV file: {e}. Returning silent data.")
             # Fallback to a safe, empty result
             return 44100, np.array([0], dtype=np.int16)
+            
+        except Exception as e:
+            print(f"Model Error: Failed to read or parse WAV file: {e}. Returning silent data.")
+            # Fallback to a safe, empty result
+            return 44100, np.array([0], dtype=np.int16)
 
     # =====================================================================
     # =====================================================================
     # --- ASYNCIO IMPLEMENTATION ---
     # =====================================================================
     # =====================================================================
-    async def _listen_to_audio_form_websocket(self):
-        try:
-            #async with connect("ws://127.0.0.1:8765") as websocket:
-            #    print("Connected to server")
-            while True:
-                frame = await self._websocket_conn.recv()
-                left, right = struct.unpack('<hh', frame)
-                #self.ws_data_arrived.emit(f"${left}")
-                print(f"Audio Frame: L={left}, R={right}")
-
-        except Exception as e:
-            print(f"Connection closed: {e}")
-
-    async def _connect_to_server(self):
-        """Establishes connection and updates state ONLY upon success."""
-        if self._ws_server_instance and not self._ws_server_instance.closed:
-            print("Client already connected.")
-            return
-
-        try:
-            # AWAIT the connection. This pauses the coroutine until connection is established or failed.
-            self._ws_server_instance = await connect(self.WEB_SOCKET_SERVER_URL)
-            
-            # --- ONLY UPDATE STATE IF CONNECTION IS SUCCESSFUL ---
-            self._is_ws_connected = True
-            print("Connected and stored persistent WebSocket client.")
-            
-            # Start concurrent data tasks here (you would add logic for this)
-            # loop = asyncio.get_running_loop()
-            # self._listener_task = loop.create_task(self._listen_indefinitely())
-            # self._processor_task = loop.create_task(self._process_data())
-            
-        except Exception as e:
-            # If connection fails, state remains False (correct)
-            print(f"Connection attempt FAILED: {e}")
-            self._ws_server_instance = None
-
-
-    async def _disconnect_from_server(self):
-        """Gracefully closes connection and updates state."""
-        if self._ws_server_instance:
-            # Cancel concurrent tasks first (crucial for cleanup)
-            # if self._listener_task: self._listener_task.cancel()
-            # if self._processor_task: self._processor_task.cancel()
-            
-            await self._ws_server_instance.close()
-            self._ws_server_instance = None
-            
-        # --- UPDATE STATE AFTER CLEANUP ---
-        self._is_ws_connected = False
-        print("WS disconnected.")
-
-    async def _listen_indefinitely(self):
-        """
-        HELPER: Fetches and unpacks data. Updates state ONLY upon successful start.
-        """
-        try:
-            # Check instance before loop to prevent crash if disconnect ran concurrently
-            if not self._ws_server_instance:
-                return # Exit if connection is gone
-                
-            # --- CRITICAL FIX: Update state inside the task, after I/O is confirmed working ---
-            self._is_ws_fetching_data = True 
-            
-            while True:
-                # This await is the pause point
-                frame = await self._ws_server_instance.recv()
-
-                if len(frame) == 4:
-                    left, right = struct.unpack('<hh', frame)
-                    #print(f"Audio Frame: L={left}, R={right}")
-                    await self._ws_data_queue.put((left, right)) 
-                    # Process data...
-                else:
-                    print(f"Warning: Received frame of unexpected size {len(frame)}. Expected 4 bytes.")
-                    
-        except asyncio.CancelledError:
-            print("Listener: Task received cancellation signal.")
-            raise # Re-raise to cleanly exit the task
-        except Exception as e:
-            print(f"Listener failed unexpectedly: {e}")
-        finally:
-            # Ensure state is always clean if the task exits for any reason (error or cancel)
-            self._is_ws_fetching_data = False
-            print("Listener task finished/cleaned up.")
+    
+    def get_latest_ws_normalized_value(self):
+        """Synchronous access for the Controller's QTimer slot."""
+        return self._latest_ws_normalized_value
+        
 
     async def _process_websocket_data_continuously(self):
-        """Fast-running task: Drains the queue and updates the state variable."""
+        """
+        Runs in the background, consuming data from the queue and updating 
+        the single state variable for the main thread to read.
+        """
         while True:
-            #print(f"Queue size: {ws_data_queue.qsize()}")
-            # 1. Wait until at least ONE item is available (blocks non-blockingly)
-            first_frame = await self._ws_data_queue.get() 
+            # Safely get the next (left, right) audio sample tuple from the queue
+            left, right = await self.ws_audio_queue.get() 
             
-            # 2. Aggressively empty the rest of the queue to find the freshest frame
-            latest_frame = first_frame
-            while True:
-                try:
-                    # Use get_nowait to avoid blocking on empty queue
-                    latest_frame = self._ws_data_queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    # print(f"Emptying queue!")
-                    # We found the most recent frame—break out and process it
-                    break
+            # Calculate RMS/Intensity (Model's core logic)
+            # Use the absolute value of the larger channel for intensity
+            raw_value = max(abs(left), abs(right))
+            MAX_16BIT = 32768.0
+            
+            # Normalize and clamp between 0.0 and 1.0
+            normalized_value = min(raw_value / MAX_16BIT, 1.0)
+            
+            # Update the state variable (The Controller reads this on its timer)
+            self._latest_ws_normalized_value = normalized_value
+            self.ws_audio_queue.task_done()
 
-            # 3. Process ONLY the 'latest_frame' and update the single state variable
-            # In a real app, this is where you'd calculate RMS and normalization
-            self._ws_latest_package = latest_frame
-            # print(f"Queue data point: {latest_frame}")
-            # Yield control back to the event loop briefly after processing a burst
-            await asyncio.sleep(0) 
-
-    def schedule_ws_connection(self):
+    async def _listen_to_audio_form_websocket(self):
         """
-        Synchronous public method. Schedules the necessary async action.
+        Asynchronous consumer: Reads data from the WebSocket and puts it 
+        into the thread-safe asyncio Queue.
         """
         try:
-            loop = asyncio.get_running_loop() 
-        except RuntimeError:
-            return "Error: Asyncio event loop not running. Did you start the app with qasync?"
-        
-        if self._is_ws_connected:
-            # If we are "connected," schedule the disconnect coroutine
-            loop.create_task(self._disconnect_from_server()) 
-            print("Disconnecting WS...")
-            
-        else:    
-            # If we are "disconnected," schedule the connect coroutine
-            loop.create_task(self._connect_to_server())
-            print("Connecting WS...")
+            # Use a slightly longer timeout in case the server takes a moment
+            async with connect("ws://127.0.0.1:8765", open_timeout=5) as websocket:
+                print("Model Async: Connected to server.")
 
-        return "Async Task Scheduled (Non-blocking)."    
-    
-    def schedule_ws_data_retrieval(self):
+                while True:
+                    # Await data arrival (non-blocking)
+                    frame = await websocket.recv()
+                    
+                    # Ensure frame is the expected size before unpacking
+                    if len(frame) == 4:
+                        left, right = struct.unpack('<hh', frame)
+                        # Put the raw data into the queue (non-blocking if queue is full)
+                        await self.ws_audio_queue.put((left, right)) 
+                    else:
+                        print(f"Model Async: Warning, received unexpected frame size: {len(frame)}")
+
+        except ConnectionRefusedError:
+            print("Model Async Error: Connection refused. Is the server running on 127.0.0.1:8765?")
+        except Exception as e:
+            print(f"Model Async: Connection closed: {e}")
+            
+        # Ensure the Model state is reset if the connection drops
+        self._latest_ws_normalized_value = 0.0 
+        
+
+    async def _slow_async_operation(self):
         """
-        Synchronous public method. Schedules the async action of listening to 
-        in-commig data from the web socket once connected.
+        The actual asynchronous function that simulates a long-running I/O task.
+        Runs entirely within the asyncio event loop.
         """
-        if not self._is_ws_connected:
-            print("Needs connection to start data retrieval.")
-            return False
+        print("Model Async: Task started, awaiting 2 seconds...")
+        # AWAIT is the keyword that yields control back to the event loop, 
+        # allowing the GUI to remain responsive.
+        await asyncio.sleep(2) 
+        print("Model Async: Wait finished. Emitting result signal.")
         
-        try:
-            # Note: loop should be retrieved using get_running_loop() in a PySide/qasync environment
-            loop = asyncio.get_event_loop() 
-        except RuntimeError:
-            return "Error: Asyncio event loop not running."
-        
-        if self._is_ws_fetching_data:
-            # 1. STOP: Handle cancellation externally
-            print("Stop data retrieval")
-            if self._ws_listener_task: 
-                self._ws_listener_task.cancel()
+        # When emitting a signal from an async task, this is safe because 
+        # QtAsyncio ensures the loop is running on the main thread.
+        self.async_task_completed.emit("Async Task Completed!")
 
-            if self._ws_processor_task:
-                self._ws_processor_task.cancel()
-            
-            # The state update (self._is_ws_fetching_data = False) should ideally
-            # be handled by the task's cleanup logic, but for simple synchronous control, 
-            # we can set it to False immediately, knowing the task is *about* to exit.
-            self._is_ws_fetching_data = False 
-            
-        else:
-            # 2. START: Schedule the task and let the task itself update the state upon success
-            print("Start data retrieval")
-            # We don't set self._is_ws_fetching_data = True here!
-            self._ws_listener_task = loop.create_task(self._listen_indefinitely())
-            self._ws_processor_task = loop.create_task(self._process_websocket_data_continuously())
+    def start_async_operation(self):
+        """
+        Synchronous public method to be called by the Controller.
+        Schedules the async task to run on the event loop.
+        """
+        if self.is_serial_connected():
+             return "Please disconnect the serial port first."
         
-        return True
+        # Schedule the slow task
+        asyncio.create_task(self._slow_async_operation())
+        
+        # Schedule the WebSocket listener
+        asyncio.create_task(self._listen_to_audio_form_websocket())
+        
+        # Schedule the continuous queue processor (NEW)
+        asyncio.create_task(self._process_websocket_data_continuously())
+        
+        # This function returns *immediately* to the Controller.
+        return "All Async Tasks Scheduled (Non-blocking)."
 
-    def get_latest_ws_package_thread_safe(self):
-        return self._ws_latest_package
+
     # =====================================================================
     # =====================================================================
     # --- SERIAL COMMUNICATION METHODS ---
@@ -354,7 +271,7 @@ class AppModel(QAbstractListModel):
             self._ports = serial.tools.list_ports.comports()
             # Return list of port device strings
             return [port.device for port in self._ports]
-        except Exception:
+        except Exception as e:
             # Handle case where pyserial is not installed or permissions denied
             # In a real app, you might log this error or show it in the UI
             print(f"Error listing ports: {e}")
@@ -394,7 +311,7 @@ class AppModel(QAbstractListModel):
             self._serial_conn = None
             return False
     
-    def send_serial_data(self, data):
+    def send_data(self, data):
         """
         Sends the provided data over the serial connection.
         Data is converted to bytes and terminated with a newline character.
