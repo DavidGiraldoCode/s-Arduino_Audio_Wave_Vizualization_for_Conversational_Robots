@@ -22,11 +22,16 @@
 
 #self.furhat.add_handler(Events.response_audio_data, self.furhat_microphone_data)
 #await self.furhat.request_audio_start(sample_rate=16000, microphone=False, speaker=True)
-import asyncio, struct
+import asyncio
+import struct
 from furhat_realtime_api import AsyncFurhatClient, Events
 import base64 # <--- 1. Import base64 module
+import logging
 
-furhat = AsyncFurhatClient("130.237.67.202", "test")
+#furhat = AsyncFurhatClient("130.237.67.202", "test")
+#furhat = AsyncFurhatClient("ws://127.0.0.1:9000/v1/events", "test")
+furhat = AsyncFurhatClient("127.0.0.1")
+furhat.set_logging_level(logging.DEBUG) #.DEBUG
 
 async def furhat_microphone_data():
      print("Event activated")
@@ -95,19 +100,17 @@ async def furhat_microphone_data(data):
 
 async def main():
     try:
-        await furhat.connect()
+        furhat.add_handler(Events.response_audio_data, furhat_microphone_data)
+        request = await furhat.connect()
+        print(f"Request data: {request}")
         # Register handlers
         #Async only
         await furhat.request_audio_start(16000, False, True)
-        furhat.add_handler(Events.response_audio_data, furhat_microphone_data)
         #furhat.add_handler(Events.response_audio_data, on_audio_stream)
         
 
-        await furhat.request_speak_text("Sending audio to test the streaming data", wait=True)
-        await asyncio.sleep(1) 
-
-        
-        await asyncio.sleep(1)
+        await furhat.request_speak_text("Sstreaming data", wait=True)
+        await asyncio.sleep(0.1) 
         await furhat.request_audio_stop
         await furhat.disconnect()
 
@@ -122,9 +125,75 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 
-#async def run_example():
-#    await furhat.connect()
-#    await furhat.request_speak_text("Hello world, I am Furhat.", wait=True)
-#    await furhat.disconnect()
+from furhat_realtime_api import AsyncFurhatClient
+import asyncio
+import logging
+import argparse
+import random
+import time
+import colorsys
+#ws://127.0.0.1:9000/v1/events
+parser = argparse.ArgumentParser()
+parser.add_argument("--host", type=str, default="127.0.0.1", help="Furhat robot IP address")
+parser.add_argument("--auth_key", type=str, default=None, help="Authentication key for Realtime API")
+args = parser.parse_args()
 
-#asyncio.run(run_example())
+furhat = AsyncFurhatClient(args.host, auth_key=args.auth_key)
+furhat.set_logging_level(logging.DEBUG) #.DEBUG INFO
+
+async def run_example():
+    try:
+        req = await furhat.connect()
+        print(f"Request: {req}")
+    except Exception as e:
+        print(f"Failed to connect to Furhat on {args.host}.")
+        print(e)
+        exit(0)
+
+    voice_status = None
+    voice_list = None
+    try:
+        voice_status = await furhat.request_voice_status() # Get the list of available voices
+        voice_list = voice_status["voice_list"]
+    except Exception as e:
+        print(f"Nope, sorry {e}")
+    
+
+    await furhat.request_voice_config(name="neural", gender="male", language="en-US") 
+   
+    face_status = None
+    face_status = await furhat.request_face_status()
+
+    print("Current voice: ", voice_status["voice_id"])
+
+    face_list = face_status["face_list"]
+
+    #await furhat.request_speak_text(f"Hello, I am Furhat. I have {len(voice_list)} different voices and {len(face_list)} different faces available. ")
+
+    user_data = await furhat.request_users_once()
+
+    await furhat.request_speak_text(f"I can currently see {len(user_data['users'])} users.")
+
+    await furhat.request_speak_text("Let me show off my LED lights.")
+
+    for i in range(10):
+        hue = random.random()
+        r, g, b = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
+        color = "#{:02x}{:02x}{:02x}".format(int(r * 255), int(g * 255), int(b * 255))
+        await furhat.request_led_set(color=color)
+        time.sleep(0.5)
+
+    await furhat.request_led_set(color="#000000")  # Turn off the LED lights
+
+    await furhat.request_speak_text("That's it for now.")
+
+    print("Done")
+    await furhat.disconnect()
+
+async def recite_poem():
+    await furhat.connect()
+    await furhat.request_speak_text("No man is an island, Entire of itself, Every man is a piece of the continent, A part of the main. If a clod be washed away by the sea, Europe is the less. As well as if a promontory were. As well as if a manor of thy friend’s Or of thine own were: Any man’s death diminishes me, Because I am involved in mankind, And therefore never send to know for whom the bell tolls; It tolls for thee.")
+    await asyncio.sleep(1)
+    await furhat.disconnect()
+
+#asyncio.run(recite_poem())

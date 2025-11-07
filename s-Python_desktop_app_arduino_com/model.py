@@ -15,6 +15,9 @@ import asyncio
 from websocket_client import WebSocketClient
 from serial_com import SerialCom
 
+# TODO: Adding Furhat
+from furhat_client import FurhatClient
+
 try:
     from scipy.io import wavfile
 except Exception:
@@ -44,6 +47,10 @@ class AppModel(QAbstractListModel):
         # internal asyncio queue for websocket -> model communication
         self._ws_queue = asyncio.Queue()
         self.ws_client = WebSocketClient(WEB_SOCKET_SERVER_URL, self._ws_queue)
+
+        # TODO: Adding Furhat API
+        self.furhat_client = FurhatClient("127.0.0.1","")
+        self.furhat_client.add_audio_stream_listeners(self.audio_stream_handler)
 
         # The "latest frame" - atomic access via asyncio tasks (controller polls this synchronously)
         # We keep a simple Python attribute protected by minimal invariants (single-writer in model)
@@ -114,23 +121,41 @@ class AppModel(QAbstractListModel):
         except RuntimeError:
             return "Error: asyncio loop not running (use qasync.run)."
 
+        """""
         if self.ws_client.is_connected:
             loop.create_task(self.ws_client.disconnect())
             return "WS disconnect scheduled"
         else:
             loop.create_task(self.ws_client.connect())
             return "WS connect scheduled"
+        """""
+
+        # TODO: Adding Furhat connection
+        if self.furhat_client.is_connected:
+            loop.create_task(self.furhat_client.disconnect())
+            return "Furhat disconnect scheduled"
+        else:
+            loop.create_task(self.furhat_client.connect())
+            return "Furhat connect scheduled"
 
     def schedule_ws_data_toggle(self):
         """Start/stop the ws fetching loop. Non-blocking. Requires ws connected."""
-        if not self.ws_client.is_connected:
+        #if not self.ws_client.is_connected:
+        if not self.furhat_client.is_connected:
             print("Model: cannot start fetch; WS not connected.")
             return False
+        
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return False
-
+        
+        if self.furhat_client.is_fetching:
+            self.furhat_client.stop_audio_stream()
+        else:
+            self.furhat_client.start_audio_stream(loop)
+            return True
+        """"
         if self.ws_client.is_fetching:
             # stop fetching by cancelling tasks inside the client
             self.ws_client.stop_fetching()
@@ -142,6 +167,7 @@ class AppModel(QAbstractListModel):
             t = loop.create_task(self._drain_ws_queue_update_latest())
             self._worker_tasks.append(t)
             return True
+        """
 
     async def _drain_ws_queue_update_latest(self):
         """Continuously take freshest frames from the queue and store a single latest package."""
@@ -167,6 +193,13 @@ class AppModel(QAbstractListModel):
         """Synchronous read of the latest package (very cheap, single tuple read)."""
         return self._latest_ws_package
 
+    async def audio_stream_handler(self,data):
+        base64_audio_data = data.get('speaker')
+    
+        # NEW: Print the raw base64 data fragment
+        print(f"Getting raw (first 30 chars): {base64_audio_data[:30]}...")
+     
+
     # ------------------------------
     # Serial surface
     # ------------------------------
@@ -185,6 +218,7 @@ class AppModel(QAbstractListModel):
     # ------------------------------
     # Cleanup helpers (called on app exit)
     # ------------------------------
+    # TODO : add the disconnection from Furhat
     async def shutdown(self):
         """Attempt to stop all running tasks and close connections (async)."""
         # cancel any worker tasks
@@ -192,6 +226,7 @@ class AppModel(QAbstractListModel):
             t.cancel()
         self._worker_tasks.clear()
 
+        """
         # stop ws fetching and disconnect
         try:
             if self.ws_client.is_fetching:
@@ -200,7 +235,14 @@ class AppModel(QAbstractListModel):
                 await self.ws_client.disconnect()
         except Exception as e:
             print("Model.shutdown error:", e)
+        """
 
+        #TODO Disconnect from listening to input stream
+        try:
+            self.furhat_client.disconnect()
+        except Exception as e:
+            print("Model.shutdown error:", e)
+            
         # close serial
         self.serial.disconnect()
         # emit completion
